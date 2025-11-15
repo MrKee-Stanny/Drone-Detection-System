@@ -1,0 +1,126 @@
+import sounddevice as sd
+import numpy as np
+import librosa, joblib, time, json, threading
+from twilio.rest import Client
+from http.server import SimpleHTTPRequestHandler, HTTPServer
+import os
+import subprocess
+from IPython.display import Audio, display
+
+# --- CONFIG ---
+MODEL_PATH = "/home/drone2025/Desktop/Drone Detection System/ML-Model-main/ml_model.pkl"
+RESULTS_FILE = "results.json"
+AUDIO_DURATION = 3     # seconds
+FS = 22050             # sample rate
+CONFIDENCE_THRESHOLD = 80
+
+# # Twilio setup
+# account_sid = "YOUR_TWILIO_SID"
+# auth_token  = "YOUR_TWILIO_TOKEN"
+# client = Client(account_sid, auth_token)
+# TO_PHONE = "+26481696490"
+# FROM_SENDER = "JEDSAlert"
+
+# --- Load ML model ---
+model = joblib.load(MODEL_PATH)
+classes = list(model.classes_)
+print("Model loaded. Classes:", classes)
+
+# def send_alert():
+#     """Send SMS alert using Twilio."""
+#     try:
+#         client.messages.create(
+#             body="?? Drone Detected! Immediate action required.",
+#             from_=FROM_SENDER,
+#             to=TO_PHONE
+#         )
+#         print("SMS alert sent!")
+#     except Exception as e:
+#         print("Twilio error:", e)
+
+def detect_loop():
+    """Continuously record, predict, and update JSON."""
+    while True:
+        try:
+            print("Listening...")
+            OUT = "sample.wav"
+            CARD = 2
+            DEV = 0
+            DURATION = 3
+            RATE = 44100
+            CHANNELS = 2
+
+            def extract_features(file_path, n_mfcc=13):
+                """Extract MFCC features from an audio file."""
+                y, sr = librosa.load(file_path, sr=22050)
+                mfccs = librosa.feature.mfcc(y=y, sr=sr, n_mfcc=n_mfcc)
+                return np.mean(mfccs, axis=1)
+
+            # record with arecord (plughw ensures format conversion)
+            subprocess.run([
+                "arecord",
+                "-D", f"plughw:{CARD},{DEV}",
+                "-f", "S16_LE",
+                "-r", str(RATE),
+                "-c", str(CHANNELS),
+                "-d", str(DURATION),
+                OUT
+            ], check=True)
+
+            file_path = OUT
+            
+            drone_index = None
+
+            if 1 in classes:
+                drone_index = classes.index(1)
+            else:
+                for idx, c in enumerate(classes):
+                    if isinstance(c, str) and "drone" in c.lower():
+                        drone_index = idx
+                        break
+            if drone_index is None:
+                drone_index = 1 if len(classes) > 1 else 0
+
+            # Predict whether an audio file contains a drone."""
+            features = extract_features(file_path).reshape(1, -1)
+            prediction = model.predict(features)[0]
+            proba = model.predict_proba(features)[0]
+            label = "Drone" if prediction == 1 else "Non-Drone"
+            print(f"Prediction: {label}")
+            print(f"Probability (Sigmoid Output): {proba[drone_index]:.4f}")
+
+            confidence = proba[drone_index]
+
+            # if confidence > CONFIDENCE_THRESHOLD:
+            #     status = 'ALERT'
+            # else:
+            #     status = 'NO ALERT'
+
+            # Write results.json
+            data = {
+                "confidence": confidence * 100,
+                "status": label
+            }
+            with open(RESULTS_FILE, "w") as f:
+                json.dump(data, f, indent=4)
+   
+            # Trigger alert if needed
+            # if status == "ALERT":
+            #      send_alert()
+
+            print(data)
+        except Exception as e:
+            print("Detection error:", e)
+            time.sleep(2)
+
+def start_http_server():
+    """Serve web folder + JSON file."""
+    os.chdir("web")   # serve files from web
+    handler = SimpleHTTPRequestHandler
+    httpd = HTTPServer(("0.0.0.0", 8000), handler)
+    print("Serving at http://localhost:8000")
+    httpd.serve_forever()
+
+# --- Run both threads ---
+threading.Thread(target=detect_loop, daemon=True).start()
+start_http_server()
