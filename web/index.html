@@ -1,0 +1,49 @@
+<!-- Enforce Authentication -->
+<script>
+  if (sessionStorage.getItem("authorized") !== "true") {
+    window.location.href = "login.html";
+  }
+</script>
+<!-- Main Interface -->
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Drone Detection Interface</title>
+    <!-- Custom CSS styles -->
+    <link rel="stylesheet" href="css/style.css" />
+  </head>
+  <body>
+    <header>
+      <h1><span>JEDS CAMPUS </span>Monitoring Dashboard</h1>
+      <div class="logo">
+        <img src="images/logo.png" alt="JEDS Logo" />
+      </div>
+      <button onclick="logout()" class="logout-btn">Logout</button>
+      <script>
+        function logout() {
+          sessionStorage.removeItem("authorized");
+          window.location.href = "login.html";
+        }
+      </script>
+    </header>
+    <div class="container">
+      <h1>Acoustic Drone Detection System</h1>
+      <h2>Status: <span id="statusText" class="status">--</span></h2>
+
+      <div class="waveform-container">
+        <canvas id="waveformCanvas"></canvas>
+      </div>
+
+      <div class="confidence-container">
+        <p>Confidence Rate:</p>
+        <div class="confidence-bar">
+          <div id="confidenceFill" class="confidence-fill"></div>
+        </div>
+        <p id="confidenceText">--%</p>
+      </div>
+    </div>
+
+    <script src="js/script.js"></script>
+  </body>
+</html>
